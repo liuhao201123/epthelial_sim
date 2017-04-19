@@ -38,6 +38,13 @@ class cells
 		void setLongy(double a);
 		void setLongLength(double a);
 		
+		double getLongx1();
+		double getLongy1();
+		double getLongLength1();		
+		void setLongx1(double a);
+		void setLongy1(double a);
+		void setLongLength1(double a);
+		
         double getx();
         double gety();
 		void setArea(double a);
@@ -50,9 +57,35 @@ class cells
 		double getPerimeter0();
     private:
         double x, y, area, perimeter;
-		double Longx, Longy, LongLength;
+		double Longx, Longy, LongLength, Longx1, Longy1, LongLength1;
 		double area0, perimeter0;
 };
+
+double cells::getLongx1()
+{
+	return Longx1;
+}
+double cells::getLongy1()
+{
+	return Longy1;
+}
+double cells::getLongLength1()
+{
+	return LongLength1;
+}
+
+void cells::setLongx1(double a)
+{
+	Longx1 = a;
+}
+void cells::setLongy1(double a)
+{
+	Longy1 = a;
+}
+void cells::setLongLength1(double a)
+{
+	LongLength1 = a;
+}
 
 double cells::getLongx()
 {

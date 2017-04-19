@@ -42,29 +42,31 @@ class vertex_model
         {
             seedi = b;
         }
+        void setVolume0();
+        void getLength_Width(double *, double *);
         void initial(int a);
         void voronoi();
-		void Division();
+		int Division();
 		void LongAxis();
+        void setThreshold0(double a);
 		int Honda(int nn, string str0, string str3, int dump_sig);
 		void dump(const string filename1, const string filename2, const string filename3);
         void get();
 		void getArea0(const vector<double> &x, const vector<double> &y);
-
+        double getThreshold();
 		void getArea(const vector<double> &x, const vector<double> &y, int out_sig);
     private:
-        double maxNoise;
+        double maxNoise, divx, divy;
         int seedi, seedi1;
 		double force(const vector<double> &pxnew, const vector<double> &pynew\
 						,vector<double> &pfxnew, vector<double> &pfynew, int out_sig);
-		void checkT1(int &sig, int &Nstep, int nn);
+		void checkT1(int *sig, int &Nstep, int nn);
 		void GetV2V_id();
 		void GetV2C_id();
 		void GetL2V_id();
 		void SetCellLocs();
-		double getThreshold();
         int CheckList();
-        double lx, ly;
+        double lx, ly, thresh0, volume0, dt, dt2;
         vector <vertices> node;
         vector <cells> cell;
         vector<vector <int>> C2V_id, V2V_id, V2C_id, L2V_id;
@@ -77,6 +79,26 @@ class vertex_model
 		// 			accroding to wether surface tension or adhesion dominates the boundaries
         int cell_number;
 };
+void vertex_model::setVolume0()
+{
+    volume0 = lx * ly / cell_number;
+}
+void vertex_model::vertex_model::getLength_Width(double *length, double *width)
+{
+    double tanphi = abs(divy/(divx * 100));
+    double b = ly + lx * tanphi;
+    double c = - volume0;
+
+    double delta_lx = (sqrt(b* b - 4.0 * tanphi *c) - b)/(2.0 * tanphi);
+    double delta_ly = delta_lx * tanphi;
+    *length = lx + delta_lx;
+    *width = ly + delta_ly;
+    cout << "delt lx is " << delta_lx << "     delta ly is "<< delta_ly<<endl;
+}
+void vertex_model::setThreshold0(double a)
+{
+    thresh0 = a;
+}
 void vertex_model::setRatio(double a, double b)
 {
 	double lx_new = a;
@@ -111,6 +133,7 @@ void vertex_model::LongAxis()
 	for(int c = 0; c<C2V_id.size(); c++ )
 	{
 		loop.clear();
+		double I11 = 0.0, I22 = 0.0, I12 = 0.0, I21 = 0.0;
 		for(int i = 0; i< C2V_id[c].size(); i++)
 		{
 			temp.clear();
@@ -142,10 +165,13 @@ void vertex_model::LongAxis()
 				temp.push_back(x0ij + (j+1)*dx); temp.push_back(y0ij + (j+1)*dy);
 				loop.push_back(temp);
 				temp.clear();
-
 			}
+			I11 -= (x1ij - x0ij) /12.0 * (pow(y1ij, 3.0) + pow(y1ij, 2.0) * y0ij + y1ij * pow(y0ij, 2.0) + pow(y0ij, 3.0));
+			I22 += (y1ij - y0ij) /12.0 * (pow(x1ij, 3.0) + pow(x1ij, 2.0) * x0ij + x1ij * pow(x0ij, 2.0) + pow(x0ij, 3.0));
+			I12 += (x1ij - x0ij)/ 24.0 * (x0ij * (3.0 * pow(y0ij, 2.0) + 2.0 * y0ij * y1ij + pow(y1ij, 2.0)) +\
+					x1ij *(3.0*pow(y1ij, 2.0) + 2.0 * y0ij * y1ij + x1ij * pow(y0ij, 2.0) ));
 		}
-		
+		I21 = I12;
 		
 		double xx = 0.0, yy = 0.0, xy = 0.0, yx = 0.0;
 		temp.resize(2);
@@ -158,8 +184,6 @@ void vertex_model::LongAxis()
 		temp[0] /= loop.size();
 		temp[1] /= loop.size();
 		
-	
-		
 		for(int i = 0; i< loop.size(); i++)
 		{
 			x0ij = loop[i][0] - temp[0];
@@ -169,12 +193,15 @@ void vertex_model::LongAxis()
 		}
 
 		MatrixXd m = MatrixXd::Zero(2, 2);
+		MatrixXd m1 = MatrixXd::Zero(2, 2);
 
 		m(0,0) = xx;
 		m(1,0) = xy;
 		m(0,1) = yx;
 		m(1,1) = yy;
+		m1(0,0) = I11; m1(1,0) = I12; m1(0,1) = I21; m1(1, 1) = I22;
 		EigenSolver<MatrixXd> es(m);
+		EigenSolver<MatrixXd> es1(m1);
 //		cout << es.pseudoEigenvectors()<<endl;
 
 //		cout <<"eigenvalue matrix "<<endl;cout <<es.pseudoEigenvalueMatrix()<<endl;
@@ -189,6 +216,17 @@ void vertex_model::LongAxis()
 		cell[c].setLongx(es.eigenvectors().col((index + 1) % temp.size()).real()[0]);
 		cell[c].setLongy(es.eigenvectors().col((index + 1) % temp.size()).real()[1]);
 		cell[c].setLongLength(temp[(index+1)%temp.size()]/temp[index]);
+		
+		temp.clear();
+		temp.push_back(es1.eigenvalues().real()[0]); temp.push_back(es1.eigenvalues().real()[1]);
+		if(temp[0] > temp[1])
+			index = 1;
+		else
+			index = 0;
+		
+		cell[c].setLongx1(es1.eigenvectors().col((index + 1) % temp.size()).real()[0]);
+		cell[c].setLongy1(es1.eigenvectors().col((index + 1) % temp.size()).real()[1]);
+		cell[c].setLongLength1(temp[(index+1)%temp.size()]/temp[index]);
 		/*if(c == 26)
 		{
 			outfile.open("E:\\work\\codes\\data\\delete.txt", ios::out);
@@ -255,6 +293,7 @@ double vertex_model::getThreshold()
 {
 	vector<double> aspect_ratio;
 	aspect_ratio.clear();
+    LongAxis();
 	for(int i = 0; i< C2V_id.size();i++)
 	{
 		aspect_ratio.push_back(cell[i].getLongLength());
@@ -280,15 +319,16 @@ double vertex_model::getThreshold()
 		// cout << aspect_ratio[i] <<  "   "<< i<< endl;
 	// }
 	int threshold_id = round(aspect_ratio.size()* 0.63);
+    
 	return aspect_ratio[threshold_id];
 }
 
 
-void vertex_model::Division()
+int vertex_model::Division()
 {
-	int Divi_C, index0, index1;
+	int Divi_C, index0, index1, elongation_sig;
 	vector<int> :: iterator it;
-	double thresh0 = getThreshold(), x0ij, x1ij, y0ij, y1ij;
+	double x0ij, x1ij, y0ij, y1ij;
 	// for(int i = 0; i< C2V_id.size(); i++)
 	// {
 		// if( thresh > cell[i].getLongLength())
@@ -299,16 +339,19 @@ void vertex_model::Division()
 	// }
 
     srand((unsigned)time(NULL));
+	//srand(11);
 	Divi_C = rand()%C2V_id.size();
 	cout << "Divi_C  "<< Divi_C <<"  "<< C2V_id.size()<<endl;
 
 	if( cell[Divi_C].getLongLength() > thresh0)
 	{
 		maxNoise = 0;
+        elongation_sig = 0;
 	}
 	else
 	{
 		maxNoise = 90;
+        elongation_sig = 1;
 	}
 
 
@@ -326,6 +369,8 @@ void vertex_model::Division()
     double phi =2 * maxNoise * ((rand()%10000)/10000.0 - 0.5) * PI / 180;
     cout << "slop " << slop<< " phi " << phi << endl; 
     slop =  (-sin(phi) + slop * cos(phi)) / (cos(phi) + slop * sin(phi));
+    divx = 1.0/sqrt(slop * slop + 1.0);
+    divy = slop/sqrt(slop * slop + 1.0);
     // always the same random number!!!!
 	for(int j = 0; j < C2V_id[Divi_C].size(); j++)
 	{
@@ -456,6 +501,7 @@ void vertex_model::Division()
 	GetL2V_id();	
 
 	getArea0(xsolve_unique, ysolve_unique);
+    return elongation_sig;
 	//refresh the lists.
 }
 
@@ -605,9 +651,9 @@ double vertex_model::force(const vector<double> &pxnew, const vector<double> &py
 			pfynew[i] -= K_alpha*(cell[cid].getArea() - cell[cid].getArea0()) * Aready[i][j]\
 						+Gama_alpha * (cell[cid].getPerimeter() - cell[cid].getPerimeter0())* Perdy[i][j];
 						
-			if(abs(K_alpha) > 1000 | abs(cell[cid].getArea()) > 1000 | abs(Areadx[i][j]) > 1000 | abs(Perdx[i][j]) > 1000\
-			| abs(cell[cid].getPerimeter0())> 1000| abs(cell[cid].getPerimeter()) > 1000| abs(cell[cid].getArea0()) > 1000)
-				cout <<" i " <<i << " j "<<j << " area0 "<<cell[cid].getArea0() <<endl;
+			// if(abs(K_alpha) > 1000 | abs(cell[cid].getArea()) > 1000 | abs(Areadx[i][j]) > 1000 | abs(Perdx[i][j]) > 1000\
+			// | abs(cell[cid].getPerimeter0())> 1000| abs(cell[cid].getPerimeter()) > 1000| abs(cell[cid].getArea0()) > 1000)
+				// cout <<" i " <<i << " j "<<j << " area0 "<<cell[cid].getArea0() <<endl;
 		}
 	}
 	
@@ -645,11 +691,12 @@ double vertex_model::force(const vector<double> &pxnew, const vector<double> &py
 
 }
 
-void vertex_model::checkT1( int &sig, int &Nstep, int nn)
+void vertex_model::checkT1( int *sig, int &Nstep, int nn)
 {
 	double x0ij, y0ij, x1ij, y1ij, vvr;
 	int index0, index1;
 	int vn(L2V_id.size()), count(0);
+	*sig = 0;
 	
 	
 	for(int i = 0; i<L2V_id.size(); i++)
@@ -668,7 +715,7 @@ void vertex_model::checkT1( int &sig, int &Nstep, int nn)
 		vvr = sqrt(pow(x0ij - x1ij, 2) + pow(y0ij - y1ij, 2));
 		if(vvr < 0.001)
 		{
-			sig = 0;
+			*sig = 1;
 			Nstep = 0;
 			count++;
 			xsolve_unique[index0] = - (y0ij - y1ij)/2.0+(x0ij + x1ij)/2.0;
@@ -751,25 +798,28 @@ int vertex_model::Honda(int nn, string str0, string str3, int dump_sig)
 {
 	vector<double> &xnew = xsolve_unique, &ynew = ysolve_unique;
 	vector<double> xold(xnew), yold(ynew);
+	vector<double> vx(xnew.size(), 0), vy(ynew.size(), 0);
 	vector<double> fxold(xsolve_unique.size()), fxnew(xsolve_unique.size());
 	vector<double> fyold(xsolve_unique.size()), fynew(xsolve_unique.size());
+	int vn(xsolve_unique.size());
 	double gamma_n(1.0e-6), temp(0.0);
-	double mean_force;
+	double mean_force, alpha0(0.1), alpha(alpha0),dtmax(2*log10(vn)), fdec = 0.5, falpha = 0.99, finc = 1.1, Nmin = 5;
+	double dt(1.0e-2);
 	stringstream ss1, ss2;
-	int sig(0), Nstep(0), count_step = 0;
+	int sig(0), Nstep(0),Fire_step(0), count_step = 0, count_sig = 0;
 	string str1, str2;
 	//str0("E:\\work\\codes\\data\\votex_model2d\\");
 
-	int vn(xsolve_unique.size());
+	
 
-
+    cout << "lx is "<< lx << "  ly is "<< ly<<endl;
 	
 	mean_force= force(xnew, ynew, fxnew, fynew, 0);
     
 //	checkT1();
 
 
-	for(int step = 0; step < 10000; step++)
+	for(int step = 0; step < 50000; step++)
 	{
         if(isnan(gamma_n))
         {
@@ -777,11 +827,11 @@ int vertex_model::Honda(int nn, string str0, string str3, int dump_sig)
         }
 		if(step % 500==0)
 		cout << "mean_force " <<  mean_force << " step " << step <<endl;
-		if( mean_force < 1.0e-15 | step == 9999 | step == 0)
+		if( mean_force < 1.0e-15 )
 		{
 			if(step > 0 & dump_sig==1 )
 			{
-				SetCellLocs();
+				//SetCellLocs();
 				LongAxis();
 				ss1.str("");
 				ss2.str("");
@@ -790,12 +840,17 @@ int vertex_model::Honda(int nn, string str0, string str3, int dump_sig)
 				str1 = str0 + ss1.str() + ".csv";
 				str2 = str0 + ss2.str() + ".csv";
 				dump(str1, str2, str3);	
+			
 				cout << "nn is "<< nn << "  step is "<< step;
 				cout<<"   force and gamma_n "<< mean_force<<"  "<< gamma_n<<endl;
 			}
 
 			
 		}
+        else if(step == 9999)
+        {
+            exit(0);
+        }
 
         if( mean_force < 1.0e-15 )
         {
@@ -816,7 +871,7 @@ int vertex_model::Honda(int nn, string str0, string str3, int dump_sig)
         cout << "before iteration "<< gamma_n << "  mean_force " << mean_force<<endl;
             exit(0);
         }
-		for(int j = 0; j< vn; j++)
+/* 		for(int j = 0; j< vn; j++)
 		{
 			xold[j] = xnew[j];
 			yold[j] = ynew[j];
@@ -825,20 +880,75 @@ int vertex_model::Honda(int nn, string str0, string str3, int dump_sig)
 			xnew[j] += gamma_n * fxnew[j];
 			ynew[j] += gamma_n * fynew[j];
 		}
-        
-      
-
+         */
+		 dt2 = dt * dt;
+		 //cout << "dt is "<< dt<<endl;
+		 for(int j = 0; j< vn; j++)
+		 {
+			 xnew[j] = xnew[j] + vx[j] * dt + 0.5 * fxold[j] * dt2;
+			 ynew[j] = ynew[j] + vy[j] * dt + 0.5 * fyold[j] * dt2;
+		 }
+		mean_force = force(xnew, ynew, fxnew, fynew, 0);
+		 for(int j = 0; j< vn; j++)
+		 {
+			 vx[j] = vx[j] + 0.5 * (fxold[j] + fxnew[j]) * dt;
+			 vy[j] = vy[j] + 0.5 * (fyold[j] + fynew[j]) * dt;
+			 fxold[j] = fxnew[j];
+			 fyold[j] = fynew[j];
+		 }
+		double vf(0), vv(0), ff(0);
+		for(int j = 0; j< vn; j++)
+		{
+			vf += vx[j] * fxnew[j] + vy[j] * fynew[j];
+			vv += vx[j] * vx[j] + vy[j] * vy[j];
+			ff += fxnew[j] * fxnew[j] + fynew[j] * fynew[j];
+		}
+		for(int j = 0; j<vn; j++)
+		{
+			vx[j] = (1.0 - alpha) * vx[j] + alpha * fxnew[j] * vv/ff;
+			vy[j] = (1.0 - alpha) * vy[j] + alpha * fynew[j] * vv/ff;
+		}
+		if(count_sig = 1 & vf <0)
+		{
+			Fire_step = 0;
+		}
+		if(vf < 0 )
+		{
+			for(int j = 0; j < vn; j++)
+			{
+				vx[j] = 0.0;
+				vy[j] = 0.0;
+			}
+			dt = dt * fdec;
+			alpha = alpha0;
+			Fire_step += 1;
+			count_sig = 0;
+		}else if(vf >= 0)
+		{
+			Fire_step += 1;
+			count_sig = 1;
+			if(Fire_step > Nmin)
+			{
+				dt = min( dt * finc, dtmax);
+				alpha = alpha * fdec;
+			}
+		}
+		
+		
+		
 		// if(nn == 27)
 			// cout << mean_force<< "  step "<< step <<endl;		
-		if(step % 10 ==0& step>20)
+		if(step % 20 ==0& step>20)
 		{
         
             int list_sig = CheckList();
-            checkT1(sig, Nstep, nn);
+            checkT1(&sig, Nstep, nn);
             if( list_sig ==1 )
             {
-                cout<< " checked T1 " << list_sig<<endl;
-                checkT1(sig, Nstep, nn);
+                cout<< " checked T1 " << list_sig<< " step is "<< step << endl;
+                checkT1(&sig, Nstep, nn);
+				if (sig ==1 )
+					cout << "  T1 event happens "<< sig <<endl;
             }
             
             count_step = 0; 
@@ -847,7 +957,7 @@ int vertex_model::Honda(int nn, string str0, string str3, int dump_sig)
         count_step += 1;
 
 
-		mean_force = force(xnew, ynew, fxnew, fynew, 0);
+
         
 
 		
@@ -860,6 +970,7 @@ int vertex_model::Honda(int nn, string str0, string str3, int dump_sig)
 					 + (ynew[i] - yold[i]) * (fynew[i] - fyold[i]);
 		    if(isnan(xnew[i]) | isnan(xold[i]) | isnan(fxnew[i]) | isnan(fxold[i])| isnan(ynew[i]) | isnan(yold[i]) | isnan(fynew[i]) | isnan(fyold[i]))
             {
+				cout << " step is "<< step << "   ";
             cout << xnew[i] << "  ";
             cout << xold[i] << "  ";
             cout << fxnew[i]<< "  ";
@@ -1121,31 +1232,34 @@ void vertex_model::initial(int seedi)
     srand(seedi);
 	int nx = int(sqrt(cell_number));
 	int ny = cell_number/nx;
-	for(int i = 0; i< cell_number; i++)
+/* 	for(int i = 0; i< cell_number; i++)
 	{
 		int row = i%nx;
 		int line = int(i/ny);
 		temp0 = - lx/2.0 + lx/nx * (row + 0.5);
 		temp1 = - ly/2.0 + ly/ny * (line + 0.5);
-		temp0 = temp0  + ((rand()%10000)/10000.0 - 0.5) * sqrt(1.0/cell_number)*0.8;
-		temp1 = temp1 + ((rand()%10000)/10000.0 - 0.5) * sqrt(1.0/cell_number)*0.8;
+		temp0 = temp0  + ((rand()%10000)/10000.0 - 0.5) * sqrt(1.0/cell_number)*1.0;
+		temp1 = temp1 + ((rand()%10000)/10000.0 - 0.5) * sqrt(1.0/cell_number)*1.0;
 		temp0 = temp0 + round(temp0/lx)*lx;
 		temp1 = temp1 + round(temp1/ly)*ly;
 		temp_cell.set(temp0, temp1);
 		cell.push_back(temp_cell);
-	}
-    // for(int i = 0; i< cell_number; i++)
-    // {
-        // temp0 = (rand()%10000)/10000.0 - 0.5;
-        // temp1 = (rand()%10000)/10000.0 - 0.5;
+	} */
+    for(int i = 0; i< cell_number; i++)
+    {
+        temp0 = (rand()%10000)/10000.0 - 0.5;
+        temp1 = (rand()%10000)/10000.0 - 0.5;
 		
-        // temp_cell.set(temp0, temp1);
-        // cell.push_back(temp_cell);
-    // }
-    //get();
+        temp_cell.set(temp0, temp1);
+        cell.push_back(temp_cell);
+    }
+
     voronoi();
+	SetCellLocs();
+	//dump("E:\\work\\codes\\data\\votex_model2d\\edges_1.csv","E:\\work\\codes\\data\\votex_model2d\\cells_1.csv", "LR.csv");
+	//exit(0);
 	getArea0(xsolve_unique, ysolve_unique);
-	//getArea(xsolve_unique, ysolve_unique);
+	//getArea(xsolve_unique, ysolve_unique, 0);
 
     //cout << "cell number is "<< cell_number<<endl;
 
@@ -1160,6 +1274,7 @@ void vertex_model::voronoi()
     vector <int> tempid0, tempid1;
     vector <double> tempsolvex, tempsolvey;
 	fstream outfile;
+
     for(vector<cells>::iterator iter = cell.begin(); iter != cell.end(); iter++)
     {
         id0.clear();
@@ -1333,7 +1448,7 @@ void vertex_model::voronoi()
     }
     cout << " finished, ready for list "<<endl;
     cout<< "dimension is " << xsolve_unique.size()<<endl;
-	//dump("E:\\work\\codes\\data\\votex_model2d\\edges_1.csv","E:\\work\\codes\\data\\votex_model2d\\cell_1.csv", "LR.csv");
+//	dump("E:\\work\\codes\\data\\votex_model2d\\edges_1.csv","E:\\work\\codes\\data\\votex_model2d\\cell_1.csv", "LR.csv");
 //=======================get V2C_id=======================================
 	GetV2C_id();
     cout << "V2C_id() ready " << endl;
